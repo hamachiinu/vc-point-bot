@@ -1,13 +1,13 @@
 const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require("discord.js");
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 require("dotenv").config();
 
-// Express (Renderでスリープ回避用)
 const app = express();
 app.get("/", (req, res) => res.send("Bot is running!"));
 app.listen(3000, () => console.log("Express alive check server is ready"));
 
-// Discordクライアント初期化
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -19,15 +19,39 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// 一時メモリにポイント保存
 const vcJoinTimes = {};
-const points = {};
+const pointsFile = path.join(__dirname, "points.json");
+let points = {};
+
+// 🔄 JSON読み込み関数
+function loadPoints() {
+  try {
+    if (fs.existsSync(pointsFile)) {
+      const raw = fs.readFileSync(pointsFile, "utf8");
+      points = JSON.parse(raw);
+    } else {
+      points = {};
+    }
+  } catch (err) {
+    console.error("ポイント読み込み失敗:", err);
+    points = {};
+  }
+}
+
+// 💾 JSON保存関数
+function savePoints() {
+  try {
+    fs.writeFileSync(pointsFile, JSON.stringify(points, null, 2));
+  } catch (err) {
+    console.error("ポイント保存失敗:", err);
+  }
+}
 
 client.on("ready", () => {
   console.log(`Bot is ready: ${client.user.tag}`);
+  loadPoints();
 });
 
-// VC参加時間の記録とポイント加算
 client.on("voiceStateUpdate", (oldState, newState) => {
   const userId = newState.id;
 
@@ -41,6 +65,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
       const duration = (Date.now() - joinedAt) / 1000;
       if (duration >= 1800) {
         points[userId] = (points[userId] || 0) + 1;
+        savePoints();
         console.log(`✅ ${userId} に 1ポイント付与！ 合計: ${points[userId]}`);
       }
       delete vcJoinTimes[userId];
@@ -48,11 +73,9 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   }
 });
 
-// メッセージコマンド処理
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  // !mypoint：streamerロール持ちのみ実行可
   if (message.content === "!mypoint") {
     const member = message.member;
     const hasStreamerRole = member.roles.cache.some(role => role.name === "streamer");
@@ -65,7 +88,6 @@ client.on("messageCreate", async (message) => {
     return message.reply(`🎯 現在のポイント： ${point} pt`);
   }
 
-  // !addpoint @user 数値：管理者のみ
   if (message.content.startsWith("!addpoint")) {
     const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
     if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
@@ -79,6 +101,7 @@ client.on("messageCreate", async (message) => {
     }
 
     points[mention.id] = (points[mention.id] || 0) + value;
+    savePoints();
     return message.reply(`✅ ${mention.username} に ${value}ポイント追加しました。合計: ${points[mention.id]} pt`);
   }
 });
