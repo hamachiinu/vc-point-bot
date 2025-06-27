@@ -24,6 +24,7 @@ const client = new Client({
 // 💾 ポイント情報の永続保存用ファイル
 const POINTS_FILE = "./points.json";
 let points = {};
+const NOTIFY_CHANNEL_ID = "1388303943758512178";
 
 // 🔄 起動時にポイントを読み込む
 if (fs.existsSync(POINTS_FILE)) {
@@ -47,8 +48,8 @@ client.once("ready", () => {
   console.log(`Bot is ready: ${client.user.tag}`);
 });
 
-// 🎧 VC入退室イベント → ポイント加算
-client.on("voiceStateUpdate", (oldState, newState) => {
+// 🎧 VC入退室イベント → 30分ごとにポイント加算
+client.on("voiceStateUpdate", async (oldState, newState) => {
   const userId = newState.id;
 
   // 入室時
@@ -61,11 +62,18 @@ client.on("voiceStateUpdate", (oldState, newState) => {
     const joinedAt = vcJoinTimes[userId];
     if (joinedAt) {
       const duration = (Date.now() - joinedAt) / 1000; // 秒数
+      const earnedPoints = Math.floor(duration / 1800); // 30分ごと
 
-      if (duration >= 1800) {
-        points[userId] = (points[userId] || 0) + 1;
+      if (earnedPoints > 0) {
+        points[userId] = (points[userId] || 0) + earnedPoints;
         savePoints();
-        console.log(`✅ ${userId} に 1ポイント付与！ 合計: ${points[userId]}`);
+        console.log(`✅ ${userId} に ${earnedPoints}ポイント付与！ 合計: ${points[userId]}`);
+
+        // 通知送信
+        const channel = await client.channels.fetch(NOTIFY_CHANNEL_ID).catch(() => null);
+        if (channel?.isTextBased()) {
+          channel.send(`<@${userId}> に VC参加報酬として ${earnedPoints} ポイント付与されました！🎉`);
+        }
       }
 
       delete vcJoinTimes[userId];
@@ -129,7 +137,7 @@ client.on("messageCreate", async (message) => {
   message.reply(`❎ ${mention.username} から ${value}ポイント減点しました。合計: ${points[mention.id]} pt`);
 });
 
-// 📌 !showpoint @user → 管理者が特定ユーザーのポイント確認
+// 🔍 !showpoint @user → 管理者が任意のユーザーのポイント確認
 client.on("messageCreate", async (message) => {
   if (!message.content.startsWith("!showpoint") || message.author.bot) return;
 
@@ -137,12 +145,10 @@ client.on("messageCreate", async (message) => {
   if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
 
   const mention = message.mentions.users.first();
-  if (!mention) {
-    return message.reply("使い方: `!showpoint @ユーザー`");
-  }
+  if (!mention) return message.reply("使い方: `!showpoint @ユーザー`");
 
   const point = points[mention.id] || 0;
-  message.reply(`📌 ${mention.username} の現在のポイント： ${point} pt`);
+  message.reply(`📊 ${mention.username} の現在のポイント: ${point} pt`);
 });
 
 // 🔑 トークンでログイン
