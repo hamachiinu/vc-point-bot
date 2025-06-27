@@ -129,5 +129,21 @@ client.on("messageCreate", async (message) => {
   message.reply(`❎ ${mention.username} から ${value}ポイント減点しました。合計: ${points[mention.id]} pt`);
 });
 
+// 📌 !showpoint @user → 管理者が特定ユーザーのポイント確認
+client.on("messageCreate", async (message) => {
+  if (!message.content.startsWith("!showpoint") || message.author.bot) return;
+
+  const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+  if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
+
+  const mention = message.mentions.users.first();
+  if (!mention) {
+    return message.reply("使い方: `!showpoint @ユーザー`");
+  }
+
+  const point = points[mention.id] || 0;
+  message.reply(`📌 ${mention.username} の現在のポイント： ${point} pt`);
+});
+
 // 🔑 トークンでログイン
 client.login(process.env.DISCORD_TOKEN);
