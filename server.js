@@ -95,7 +95,7 @@ client.on("messageCreate", async (message) => {
       return "🥉 Bronze";
     }
 
-    const rankLine = point === 0 ? "" : `\n🏅 ランク：${getRank(point)}`;
+    const rankLine = point === 0 ? "" : `\nランク：${getRank(point)}`;
     message.reply(`🎯 現在のポイント： ${point} pt${rankLine}`);
   }
 });
