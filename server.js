@@ -62,11 +62,11 @@ client.on("voiceStateUpdate", (oldState, newState) => {
     if (joinedAt) {
       const duration = (Date.now() - joinedAt) / 1000; // 秒数
 
-      const pointsEarned = Math.floor(duration / 1800); // 1800秒＝30分
-      if (pointsEarned > 0) {
-        points[userId] = (points[userId] || 0) + pointsEarned;
+      const earnedPoints = Math.floor(duration / 1800); // 1800秒ごとに1ポイント
+      if (earnedPoints > 0) {
+        points[userId] = (points[userId] || 0) + earnedPoints;
         savePoints();
-        console.log(`✅ ${userId} に ${pointsEarned}ポイント付与！ 合計: ${points[userId]}`);
+        console.log(`✅ ${userId} に ${earnedPoints}ポイント付与！ 合計: ${points[userId]}`);
       }
 
       delete vcJoinTimes[userId];
@@ -74,70 +74,93 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   }
 });
 
-// 💬 !mypoint → 自分のポイント確認（ランク付き、0ポイント時はランク非表示）
+// 💬 コマンドハンドラー（すべて統合）
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
-  if (message.content === "!mypoint") {
-    const member = message.member;
-    const hasStreamerRole = member.roles.cache.some(role => role.name === "streamer");
 
+  const content = message.content;
+  const member = message.member;
+
+  // !mypoint
+  if (content === "!mypoint") {
+    const hasStreamerRole = member.roles.cache.some(role => role.name === "streamer");
     if (!hasStreamerRole) {
       return message.reply("❌ このコマンドは `streamer` ロールを持つメンバーのみ使えます。");
     }
 
     const point = points[member.id] || 0;
 
-    function getRank(point) {
-      if (point >= 5000) return "👑 Master";
-      if (point >= 1501) return "🏆️ Platinum";
-      if (point >= 1001) return "🥇 Gold";
-      if (point >= 501) return "🥈 Silver";
-      return "🥉 Bronze";
+    let rank = "";
+    if (point >= 5000) rank = "👑 Master";
+    else if (point >= 1501) rank = "🏆 Platinum";
+    else if (point >= 1001) rank = "🥇 Gold";
+    else if (point >= 501) rank = "🥈 Silver";
+    else if (point >= 1) rank = "🥉 Bronze";
+
+    let reply = `🎯 現在のポイント： ${point} pt`;
+    if (rank) reply += `\n🪪 ランク： ${rank}`;
+
+    return message.reply(reply);
+  }
+
+  // !addpoint @user 数
+  if (content.startsWith("!addpoint")) {
+    const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
+    if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
+
+    const mention = message.mentions.users.first();
+    const args = content.split(" ");
+    const value = parseInt(args[2]);
+
+    if (!mention || isNaN(value)) {
+      return message.reply("使い方: `!addpoint @ユーザー ポイント数`");
     }
 
-    const rankLine = point === 0 ? "" : `\nランク：${getRank(point)}`;
-    message.reply(`🎯 現在のポイント： ${point} pt${rankLine}`);
-  }
-});
-
-// ➕ !addpoint @user 数 → 管理者が手動で追加
-client.on("messageCreate", async (message) => {
-  if (!message.content.startsWith("!addpoint") || message.author.bot) return;
-
-  const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
-  if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
-
-  const mention = message.mentions.users.first();
-  const args = message.content.split(" ");
-  const value = parseInt(args[2]);
-
-  if (!mention || isNaN(value)) {
-    return message.reply("使い方: `!addpoint @ユーザー ポイント数`");
+    points[mention.id] = (points[mention.id] || 0) + value;
+    savePoints();
+    return message.reply(`✅ ${mention.username} に ${value}ポイント追加しました。合計: ${points[mention.id]} pt`);
   }
 
-  points[mention.id] = (points[mention.id] || 0) + value;
-  savePoints();
-  message.reply(`✅ ${mention.username} に ${value}ポイント追加しました。合計: ${points[mention.id]} pt`);
-});
+  // !removepoint @user 数
+  if (content.startsWith("!removepoint")) {
+    const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
+    if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
 
-// ➖ !removepoint @user 数 → 管理者が手動で減点
-client.on("messageCreate", async (message) => {
-  if (!message.content.startsWith("!removepoint") || message.author.bot) return;
+    const mention = message.mentions.users.first();
+    const args = content.split(" ");
+    const value = parseInt(args[2]);
 
-  const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
-  if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
+    if (!mention || isNaN(value)) {
+      return message.reply("使い方: `!removepoint @ユーザー ポイント数`");
+    }
 
-  const mention = message.mentions.users.first();
-  const args = message.content.split(" ");
-  const value = parseInt(args[2]);
-
-  if (!mention || isNaN(value)) {
-    return message.reply("使い方: `!removepoint @ユーザー ポイント数`");
+    points[mention.id] = Math.max((points[mention.id] || 0) - value, 0);
+    savePoints();
+    return message.reply(`❎ ${mention.username} から ${value}ポイント減点しました。合計: ${points[mention.id]} pt`);
   }
 
-  points[mention.id] = Math.max((points[mention.id] || 0) - value, 0);
-  savePoints();
-  message.reply(`❎ ${mention.username} から ${value}ポイント減点しました。合計: ${points[mention.id]} pt`);
+  // !showpoint @user
+  if (content.startsWith("!showpoint")) {
+    const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
+    if (!isAdmin) return message.reply("❌ このコマンドは管理者のみ使えます。");
+
+    const mention = message.mentions.users.first();
+    if (!mention) return message.reply("使い方: `!showpoint @ユーザー`");
+
+    const point = points[mention.id] || 0;
+
+    let rank = "";
+    if (point >= 5000) rank = "👑 Master";
+    else if (point >= 1501) rank = "🏆 Platinum";
+    else if (point >= 1001) rank = "🥇 Gold";
+    else if (point >= 501) rank = "🥈 Silver";
+    else if (point >= 1) rank = "🥉 Bronze";
+
+    let reply = `🎯 ${mention.username} のポイント： ${point} pt`;
+    if (rank) reply += `\n🪪 ランク： ${rank}`;
+
+    return message.reply(reply);
+  }
 });
 
 // 🔑 トークンでログイン
